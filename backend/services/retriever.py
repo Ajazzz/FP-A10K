@@ -2,7 +2,29 @@ import os
 from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
 
-model = SentenceTransformer("BAAI/bge-small-en-v1.5")
+#model = SentenceTransformer("BAAI/bge-small-en-v1.5")
+
+
+
+from sentence_transformers import SentenceTransformer
+import os
+
+model = None
+
+def get_model():
+    global model
+    if model is None:
+        print("🔄 Loading embedding model...")
+        model = SentenceTransformer(
+            "BAAI/bge-small-en-v1.5",
+            device="cpu"
+        )
+    return model
+
+
+def embed_query(query: str):
+    model = get_model()
+    return model.encode(query).tolist()
 
 
 def get_index():

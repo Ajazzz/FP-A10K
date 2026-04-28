@@ -1,13 +1,6 @@
-# Python
-__pycache__/
-*.pyc
-
-# Env
 .env
-
-# Node
+backend/.env
+frontend/.env
 node_modules/
+frontend/node_modules/
 frontend/dist/
-
-# OS
-.DS_Store

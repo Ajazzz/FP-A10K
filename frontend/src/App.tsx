@@ -10,10 +10,15 @@ import {
 } from "lucide-react";
 
 // ─── CONFIG ───────────────────────────────────────────────────
+// ─── BACKEND URL (AUTO DETECT) ───────────────────────────────
 
-// ✅ ENV-based backend URL
+// If deployed → same domain (/api)
+// If local → fallback to localhost
 const BACKEND_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:8000";
+  import.meta.env.VITE_API_URL ||
+  (window.location.hostname === "localhost"
+    ? "http://localhost:8000"
+    : "");
 
 // ─── TYPES ───────────────────────────────────────────────────
 
@@ -31,15 +36,17 @@ interface QueryResponse {
 
 // ─── API ─────────────────────────────────────────────────────
 
-// ✅ FIXED API CALL
 async function handleSearch(question: string): Promise<QueryResponse> {
-  const response = await fetch(`${BACKEND_URL}/api/query`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ query: question }), // ✅ FIX
-  });
+  const response = await fetch(
+    `${BACKEND_URL}/api/query`, // ✅ works both local + prod
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query: question }),
+    }
+  );
 
   if (!response.ok) {
     const text = await response.text();
@@ -51,10 +58,10 @@ async function handleSearch(question: string): Promise<QueryResponse> {
   return {
     answer: data.answer || "No response generated.",
     sources: (data.sources || []).map((s: any) => ({
-      document: s.document || "10K-NVDA_top30.md",
+      document: s.document || "10K-NVDA",
       page_number: s.page_number || 1,
-      snippet: s.snippet || JSON.stringify(s),
-      relevance_score: s.relevance_score || 1,
+      snippet: s.snippet || s.text || JSON.stringify(s),
+      relevance_score: s.relevance_score || s.score || 1,
     })),
   };
 }

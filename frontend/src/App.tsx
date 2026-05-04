@@ -38,7 +38,7 @@ interface QueryResponse {
 
 async function handleSearch(question: string): Promise<QueryResponse> {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/query`, {
+    const response = await fetch("/api/query", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

@@ -36,9 +36,9 @@ interface QueryResponse {
 
 // ─── API ─────────────────────────────────────────────────────
 
-async function handleSearch(question: string): Promise<QueryResponse> {
+async function handleSearch(question: string) {
   try {
-    const response = await fetch("/api/query", {
+    const response = await fetch("/api/query", {   // 🔥 HARD FIX
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -48,27 +48,13 @@ async function handleSearch(question: string): Promise<QueryResponse> {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(text || "Backend error");
+      throw new Error(text);
     }
 
-    const data = await response.json();
-
-    return {
-      answer: data.answer || "No response generated.",
-      sources: (data.sources || []).map((s: any) => ({
-        document: s.document || "10K-NVDA",
-        page_number: s.page_number || 1,
-        snippet: s.snippet || s.text || "",
-        relevance_score: s.relevance_score || s.score || 1,
-      })),
-    };
+    return await response.json();
   } catch (err) {
     console.error("API ERROR:", err);
-
-    return {
-      answer: "⚠️ Backend not reachable. Please try again.",
-      sources: [],
-    };
+    throw err;
   }
 }
 

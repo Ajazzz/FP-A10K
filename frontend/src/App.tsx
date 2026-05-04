@@ -14,11 +14,6 @@ import {
 
 // If deployed → same domain (/api)
 // If local → fallback to localhost
-const BACKEND_URL =
-  import.meta.env.VITE_API_URL ||
-  (window.location.hostname === "localhost"
-    ? "http://localhost:8000"
-    : "");
 
 // ─── TYPES ───────────────────────────────────────────────────
 
@@ -37,27 +32,22 @@ interface QueryResponse {
 // ─── API ─────────────────────────────────────────────────────
 
 async function handleSearch(question: string) {
-  try {
-    const response = await fetch("/api/query", {   // 🔥 HARD FIX
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ query: question }),
-    });
+  const response = await fetch("/api/query", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ query: question }),
+  });
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text);
-    }
-
-    return await response.json();
-  } catch (err) {
-    console.error("API ERROR:", err);
-    throw err;
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text);
   }
-}
 
+  return await response.json();
+}
+ 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function genId() {

@@ -7,7 +7,6 @@ from sentence_transformers import SentenceTransformer
 
 
 from sentence_transformers import SentenceTransformer
-import os
 
 model = None
 
@@ -20,6 +19,11 @@ def get_model():
             device="cpu"
         )
     return model
+
+
+def embed_text(text: str):
+    model = get_model()   # ✅ FIX HERE
+    return model.encode(text).tolist()
 
 
 def embed_query(query: str):
@@ -35,8 +39,6 @@ def get_index():
     return pc.Index(index_name)
 
 
-def embed_text(text: str):
-    return model.encode(text).tolist()
 
 
 def keyword_score(query, text):

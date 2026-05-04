@@ -1,31 +1,16 @@
 import os
-from dotenv import load_dotenv
-
-# ─────────────────────────────────────────────
-# Load ENV FIRST (CRITICAL)
-# ─────────────────────────────────────────────
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-env_path = os.path.join(BASE_DIR, ".env")
-
-load_dotenv(env_path)
-
-print("PINECONE KEY:", os.getenv("PINECONE_API_KEY"))
-
-# ─────────────────────────────────────────────
-# Now safe to import rest of app
-# ─────────────────────────────────────────────
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from dotenv import load_dotenv
 
-from backend.routes.query import router as query_router
+# Load env
+load_dotenv()
 
 app = FastAPI()
 
-# ─────────────────────────────────────────────
-# CORS (safe for dev)
-# ─────────────────────────────────────────────
+# CORS (safe)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,23 +19,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─────────────────────────────────────────────
-# API Routes
-# ─────────────────────────────────────────────
+# API routes
+from backend.routes.query import router as query_router
 app.include_router(query_router, prefix="/api")
 
-# ─────────────────────────────────────────────
-# Static Files (React build)
-# ─────────────────────────────────────────────
+# Static paths
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
-ASSETS_DIR = os.path.join(STATIC_DIR, "assets")
 
-if os.path.exists(ASSETS_DIR):
-    app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+# Serve assets
+if os.path.exists(STATIC_DIR):
+    app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
 
-# ─────────────────────────────────────────────
-# SPA Fallback (React)
-# ─────────────────────────────────────────────
+
+# Serve React app
 @app.get("/{full_path:path}")
 async def serve_frontend(full_path: str):
     index_path = os.path.join(STATIC_DIR, "index.html")
@@ -58,6 +40,4 @@ async def serve_frontend(full_path: str):
     if os.path.exists(index_path):
         return FileResponse(index_path)
 
-    return {
-        "message": "Frontend not built yet. Run 'npm run build' inside frontend folder."
-    }
+    return {"error": "Frontend not built"}

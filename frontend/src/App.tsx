@@ -181,7 +181,7 @@ function MsgBubble({ msg, onSrcClick }: { msg: Message; onSrcClick?: (i: number)
         <div className="flex-1 bg-rose-500/10 border border-rose-500/20 rounded-lg px-4 py-3">
           <p className="text-[11px] font-mono text-rose-400 font-semibold tracking-wider mb-1">BACKEND ERROR</p>
           <p className="text-sm text-rose-300/80">{msg.content}</p>
-          <p className="text-[11px] font-mono text-rose-500/50 mt-2">Demo mode — configure BACKEND_URL to connect to your Vercel deployment.</p>
+          <p className="text-[11px] font-mono text-rose-500/50 mt-2">Backend request failed. Please check server logs.</p>
         </div>
       </div>
     );
@@ -345,7 +345,6 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [search, setSearch] = useState("");
-  const [demoIdx, setDemoIdx] = useState(0);
   const [tick, setTick] = useState(0);
 
   const endRef = useRef<HTMLDivElement>(null);
@@ -368,21 +367,22 @@ export default function App() {
   }, []);
 
   const loadHistory = useCallback((id: string) => {
-    setActiveId(id);
-    const item = history.find((h) => h.id === id);
-    if (!item) return;
-    const demoMap: Record<string, number> = { h1: 0, h2: 1, h3: 2 };
-    const idx = demoMap[id];
-    if (idx !== undefined && idx < DEMO_RESPONSES.length) {
-      const demo = DEMO_RESPONSES[idx];
-      setMessages([
-        { id: genId(), role: "user", content: item.query, timestamp: new Date(item.timestamp.getTime() - 30000) },
-        { id: genId(), role: "assistant", content: demo.answer, sources: demo.sources, timestamp: item.timestamp },
+  setActiveId(id);
+  const item = history.find((h) => h.id === id);
+  if (!item) return;
+
+  setMessages([
+    {
+          id: genId(),
+          role: "user",
+          content: item.query,
+          timestamp: new Date(item.timestamp),
+        },
       ]);
-      setActiveSources(demo.sources);
-    }
-    setHighlightedSrc(null);
-  }, [history]);
+    
+      setActiveSources([]);
+      setHighlightedSrc(null);
+    }, [history]);
 
   const deleteHistory = useCallback((id: string) => {
     setHistory((p) => p.filter((h) => h.id !== id));
@@ -417,13 +417,7 @@ export default function App() {
     try {
       await simulate();
 
-      let data: QueryResponse;
-      try {
-        data = await handleSearch(q);
-      } catch {
-        // Fallback to demo data if backend unreachable
-        data = DEMO_RESPONSES[demoIdx % DEMO_RESPONSES.length];
-        setDemoIdx((p) => p + 1);
+      const data = await handleSearch(q);
         await new Promise((r) => setTimeout(r, 300));
       }
 
@@ -498,7 +492,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-1.5 px-4 h-full">
             <WifiOff className="w-3 h-3 text-yellow-400" />
-            <span className="text-[10px] font-mono text-yellow-400">DEMO- testing</span>
+            <span className="text-[10px] font-mono text-yellow-400">Live</span>
           </div>
           <div className="flex items-center gap-1.5 px-4 h-full">
             <Clock className="w-3 h-3 text-slate-500" />

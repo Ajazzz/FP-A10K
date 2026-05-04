@@ -397,47 +397,88 @@ export default function App() {
   }, []);
 
   const submit = useCallback(async () => {
-    const q = input.trim();
-    if (!q || loading) return;
-    setInput("");
-    if (textRef.current) textRef.current.style.height = "auto";
+  const q = input.trim();
+  if (!q || loading) return;
 
-    const userMsg: Message = { id: genId(), role: "user", content: q, timestamp: new Date() };
-    const loadId = genId();
-    const loadMsg: Message = { id: loadId, role: "assistant", content: "", timestamp: new Date(), isLoading: true };
-    setMessages((p) => [...p, userMsg, loadMsg]);
-    setLoading(true);
-    setActiveSources([]);
-    setHighlightedSrc(null);
+  setInput("");
+  if (textRef.current) textRef.current.style.height = "auto";
 
-    const hId = genId();
-    setHistory((p) => [{ id: hId, query: q, timestamp: new Date(), messageCount: 1 }, ...p]);
-    setActiveId(hId);
+  const userMsg: Message = {
+    id: genId(),
+    role: "user",
+    content: q,
+    timestamp: new Date(),
+  };
 
-    try {
-      await simulate();
+  const loadId = genId();
 
-      const data = await handleSearch(q);
-        await new Promise((r) => setTimeout(r, 300));
-      }
+  const loadMsg: Message = {
+    id: loadId,
+    role: "assistant",
+    content: "",
+    timestamp: new Date(),
+    isLoading: true,
+  };
 
-      const reply: Message = { id: genId(), role: "assistant", content: data.answer, sources: data.sources, timestamp: new Date() };
-      setMessages((p) => p.map((m) => (m.id === loadId ? reply : m)));
-      setActiveSources(data.sources ?? []);
-      setHistory((p) => p.map((h) => (h.id === hId ? { ...h, messageCount: 2 } : h)));
-      setStatus("done");
-    } catch (err) {
-      const errMsg: Message = {
-        id: genId(), role: "error",
-        content: err instanceof Error ? err.message : "Unknown error",
-        timestamp: new Date(),
-      };
-      setMessages((p) => p.map((m) => (m.id === loadId ? errMsg : m)));
-      setStatus("error");
-    } finally {
-      setLoading(false);
-    }
-  }, [input, loading, demoIdx, simulate]);
+  setMessages((p) => [...p, userMsg, loadMsg]);
+  setLoading(true);
+  setActiveSources([]);
+  setHighlightedSrc(null);
+
+  const hId = genId();
+  setHistory((p) => [
+    { id: hId, query: q, timestamp: new Date(), messageCount: 1 },
+    ...p,
+  ]);
+  setActiveId(hId);
+
+  try {
+    await simulate();
+
+    const data = await handleSearch(q);
+    await new Promise((r) => setTimeout(r, 300));
+
+    const reply: Message = {
+      id: genId(),
+      role: "assistant",
+      content: data.answer,
+      sources: data.sources,
+      timestamp: new Date(),
+    };
+
+    setMessages((p) =>
+      p.map((m) => (m.id === loadId ? reply : m))
+    );
+
+    setActiveSources(data.sources ?? []);
+
+    setHistory((p) =>
+      p.map((h) =>
+        h.id === hId ? { ...h, messageCount: 2 } : h
+      )
+    );
+
+    setStatus("done");
+  } catch (err: any) {
+    const errMsg: Message = {
+      id: genId(),
+      role: "error",
+      content: err?.message || "Backend error",
+      timestamp: new Date(),
+    };
+
+    setMessages((p) =>
+      p.map((m) => (m.id === loadId ? errMsg : m))
+    );
+
+    setStatus("error");
+  } finally {
+    setLoading(false);
+  }
+}, [input, loading, simulate]);
+      
+      
+ 
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }

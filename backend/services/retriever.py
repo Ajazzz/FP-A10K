@@ -1,60 +1,24 @@
 import os
+from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone
-from sentence_transformers import SentenceTransformer
 
-#model = SentenceTransformer("BAAI/bge-small-en-v1.5")
+# 🔹 Load embedding model once
+model = SentenceTransformer("all-MiniLM-L6-v2")
 
-
-
-from sentence_transformers import SentenceTransformer
-
-model = None
-
-def get_model():
-    global model
-    if model is None:
-        print("🔄 Loading embedding model...")
-        model = SentenceTransformer(
-            "BAAI/bge-small-en-v1.5",
-            device="cpu"
-        )
-    return model
+# 🔹 Pinecone init
+pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+index_name = os.getenv("INDEX_NAME")
+index = pc.Index(index_name)
 
 
 def embed_text(text: str):
-    model = get_model()   # ✅ FIX HERE
     return model.encode(text).tolist()
 
 
-def embed_query(query: str):
-    model = get_model()
-    return model.encode(query).tolist()
-
-
-def get_index():
-    api_key = os.getenv("PINECONE_API_KEY")
-    index_name = os.getenv("INDEX_NAME")
-
-    pc = Pinecone(api_key=api_key)
-    return pc.Index(index_name)
-
-
-
-
-def keyword_score(query, text):
+def hybrid_retrieve(query: str, top_k: int = 5):
     """
-    Simple BM25-like scoring (lightweight)
+    Hybrid retrieval (vector only for now, extend later with BM25)
     """
-    query_words = set(query.lower().split())
-    text_words = set(text.lower().split())
-
-    overlap = query_words.intersection(text_words)
-
-    return len(overlap)
-
-
-def hybrid_retrieve(query: str, top_k: int = 15):
-    index = get_index()
 
     query_embedding = embed_text(query)
 
@@ -66,20 +30,16 @@ def hybrid_retrieve(query: str, top_k: int = 15):
 
     docs = []
 
-    for match in results["matches"]:
-        text = match["metadata"].get("text", "")
+    for match in results.get("matches", []):
+        metadata = match.get("metadata", {}) or {}
 
         docs.append({
-            "content": text,
-            "vector_score": match["score"],
-            "keyword_score": keyword_score(query, text)
+            "content": metadata.get("text", ""),
+            "metadata": {
+                "source": metadata.get("source", "Unknown"),
+                "page": metadata.get("page", 1),
+                "score": match.get("score", 0)
+            }
         })
 
-    # 🔥 Combine scores
-    for d in docs:
-        d["final_score"] = (0.7 * d["vector_score"]) + (0.3 * d["keyword_score"])
-
-    # Sort by final score
-    docs = sorted(docs, key=lambda x: x["final_score"], reverse=True)
-
-    return docs[:8]  # return top 8
+    return docs

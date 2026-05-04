@@ -9,12 +9,6 @@ import {
   Copy, Check, X, ExternalLink, Shield, FileSearch
 } from "lucide-react";
 
-// ─── CONFIG ───────────────────────────────────────────────────
-// ─── BACKEND URL (AUTO DETECT) ───────────────────────────────
-
-// If deployed → same domain (/api)
-// If local → fallback to localhost
-
 // ─── TYPES ───────────────────────────────────────────────────
 
 interface Source {
@@ -22,6 +16,8 @@ interface Source {
   page_number: number;
   snippet: string;
   relevance_score?: number;
+  fiscal_year?: string;
+  section?: string;
 }
 
 interface QueryResponse {
@@ -29,14 +25,32 @@ interface QueryResponse {
   sources: Source[];
 }
 
+type MessageRole = "user" | "assistant" | "error";
+
+interface Message {
+  id: string;
+  role: MessageRole;
+  content: string;
+  sources?: Source[];
+  timestamp: Date;
+  isLoading?: boolean;
+}
+
+interface HistoryItem {
+  id: string;
+  query: string;
+  timestamp: Date;
+  messageCount: number;
+}
+
+type AnalysisStatus = "idle" | "connecting" | "retrieving" | "analyzing" | "synthesizing" | "done" | "error";
+
 // ─── API ─────────────────────────────────────────────────────
 
-async function handleSearch(question: string) {
+async function handleSearch(question: string): Promise<QueryResponse> {
   const response = await fetch("/api/query", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query: question }),
   });
 
@@ -45,10 +59,15 @@ async function handleSearch(question: string) {
     throw new Error(text);
   }
 
-  return await response.json();
+  const data = await response.json();
+
+  return {
+    answer: data?.answer || "No answer returned",
+    sources: Array.isArray(data?.sources) ? data.sources : [],
+  };
 }
- 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// ─── Helpers ─────────────────────────────────────────────────
 
 function genId() {
   return Math.random().toString(36).slice(2, 10);
@@ -97,7 +116,7 @@ const STATUS_COLOR: Record<AnalysisStatus, string> = {
   analyzing: "text-violet-400", synthesizing: "text-emerald-400", done: "text-emerald-400", error: "text-rose-400",
 };
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Sub-components ──────────────────────────────────────────
 
 function CopyBtn({ text }: { text: string }) {
   const [ok, setOk] = useState(false);
@@ -127,7 +146,7 @@ function LoadingSkeleton() {
   );
 }
 
-function MsgBubble({ msg, onSrcClick }: { msg: Message; onSrcClick?: (i: number) => void }) {
+function MsgBubble({ msg, onSrcClick }: { msg: Message; onSrcClick?: (i: number, sources: Source[]) => void }) {
   if (msg.role === "user") {
     return (
       <div className="flex gap-3 justify-end group">
@@ -204,11 +223,14 @@ function MsgBubble({ msg, onSrcClick }: { msg: Message; onSrcClick?: (i: number)
         {!msg.isLoading && msg.sources && msg.sources.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {msg.sources.map((src, i) => (
-              <button key={i} onClick={() => onSrcClick?.(i)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-900 border border-slate-700/50 hover:border-emerald-500/40 hover:bg-emerald-500/10 transition-all group/s">
+              <button
+                key={i}
+                onClick={() => onSrcClick?.(i, msg.sources!)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-900 border border-slate-700/50 hover:border-emerald-500/40 hover:bg-emerald-500/10 transition-all group/s"
+              >
                 <span className="text-[9px] font-mono text-slate-600 group-hover/s:text-emerald-500 font-bold">[{i + 1}]</span>
                 <span className="text-[10px] font-mono text-slate-500 group-hover/s:text-slate-300 truncate max-w-[140px]">
-                  {src.document.replace(".pdf", "")} p.{src.page_number}
+                  {(src.document || "Unknown").replace(".pdf", "")} p.{src.page_number || 1}
                 </span>
                 <ExternalLink className="w-2.5 h-2.5 text-slate-600 group-hover/s:text-emerald-400 shrink-0" />
               </button>
@@ -264,12 +286,27 @@ function SourceCard({ src, index, highlighted }: { src: Source; index: number; h
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-1">
             <FileText className="w-3 h-3 text-slate-500 shrink-0" />
-            <span className="text-[11px] font-mono text-slate-300 truncate font-medium">{src.document.replace(".pdf", "")}</span>
+            <span className="text-[11px] font-mono text-slate-300 truncate font-medium">
+              {(src.document || "Unknown").replace(".pdf", "")}
+            </span>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-1"><Hash className="w-2.5 h-2.5 text-slate-600" /><span className="text-[10px] font-mono text-slate-500">p.{src.page_number}</span></div>
-            {src.fiscal_year && <div className="flex items-center gap-1"><BookOpen className="w-2.5 h-2.5 text-slate-600" /><span className="text-[10px] font-mono text-slate-500">{src.fiscal_year}</span></div>}
-            {pct !== null && <div className="flex items-center gap-1"><Star className="w-2.5 h-2.5 text-slate-600" /><span className={`text-[10px] font-mono ${pct >= 90 ? "text-emerald-400" : pct >= 75 ? "text-sky-400" : "text-yellow-400"}`}>{pct}%</span></div>}
+            <div className="flex items-center gap-1">
+              <Hash className="w-2.5 h-2.5 text-slate-600" />
+              <span className="text-[10px] font-mono text-slate-500">p.{src.page_number}</span>
+            </div>
+            {src.fiscal_year && (
+              <div className="flex items-center gap-1">
+                <BookOpen className="w-2.5 h-2.5 text-slate-600" />
+                <span className="text-[10px] font-mono text-slate-500">{src.fiscal_year}</span>
+              </div>
+            )}
+            {pct !== null && (
+              <div className="flex items-center gap-1">
+                <Star className="w-2.5 h-2.5 text-slate-600" />
+                <span className={`text-[10px] font-mono ${pct >= 90 ? "text-emerald-400" : pct >= 75 ? "text-sky-400" : "text-yellow-400"}`}>{pct}%</span>
+              </div>
+            )}
           </div>
         </div>
         {open ? <ChevronUp className="w-3.5 h-3.5 text-slate-600 shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-600 shrink-0" />}
@@ -302,10 +339,9 @@ function SourceCard({ src, index, highlighted }: { src: Source; index: number; h
   );
 }
 
-// ─── Main App ─────────────────────────────────────────────────────────────────
+// ─── Main App ─────────────────────────────────────────────────
 
 export default function App() {
-  // ── State ──────────────────────────────────────────────────────────────────
   const [messages, setMessages] = useState<Message[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([
     { id: "h1", query: "NVIDIA 2024 Revenue Analysis", timestamp: new Date(Date.now() - 720000), messageCount: 2 },
@@ -321,12 +357,11 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [search, setSearch] = useState("");
-  const [tick, setTick] = useState(0);
+  const [, setTick] = useState(0);
 
   const endRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
 
-  // Live clock
   useEffect(() => {
     const t = setInterval(() => setTick((p) => p + 1), 1000);
     return () => clearInterval(t);
@@ -336,29 +371,18 @@ export default function App() {
 
   const timeStr = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 
-  // ── Handlers ───────────────────────────────────────────────────────────────
-
   const newChat = useCallback(() => {
     setMessages([]); setActiveSources([]); setHighlightedSrc(null); setActiveId(null); setStatus("idle");
   }, []);
 
   const loadHistory = useCallback((id: string) => {
-  setActiveId(id);
-  const item = history.find((h) => h.id === id);
-  if (!item) return;
-
-  setMessages([
-    {
-          id: genId(),
-          role: "user",
-          content: item.query,
-          timestamp: new Date(item.timestamp),
-        },
-      ]);
-    
-      setActiveSources([]);
-      setHighlightedSrc(null);
-    }, [history]);
+    setActiveId(id);
+    const item = history.find((h) => h.id === id);
+    if (!item) return;
+    setMessages([{ id: genId(), role: "user", content: item.query, timestamp: new Date(item.timestamp) }]);
+    setActiveSources([]);
+    setHighlightedSrc(null);
+  }, [history]);
 
   const deleteHistory = useCallback((id: string) => {
     setHistory((p) => p.filter((h) => h.id !== id));
@@ -368,93 +392,68 @@ export default function App() {
   const simulate = useCallback(async () => {
     setStatus("connecting"); await new Promise((r) => setTimeout(r, 600));
     setStatus("retrieving"); await new Promise((r) => setTimeout(r, 800));
-    setStatus("analyzing"); await new Promise((r) => setTimeout(r, 1100));
+    setStatus("analyzing");  await new Promise((r) => setTimeout(r, 1100));
     setStatus("synthesizing"); await new Promise((r) => setTimeout(r, 700));
   }, []);
 
   const submit = useCallback(async () => {
-  const q = input.trim();
-  if (!q || loading) return;
+    const q = input.trim();
+    if (!q || loading) return;
 
-  setInput("");
-  if (textRef.current) textRef.current.style.height = "auto";
+    setInput("");
+    if (textRef.current) textRef.current.style.height = "auto";
 
-  const userMsg: Message = {
-    id: genId(),
-    role: "user",
-    content: q,
-    timestamp: new Date(),
-  };
+    const userMsg: Message = { id: genId(), role: "user", content: q, timestamp: new Date() };
+    const loadId = genId();
+    const loadMsg: Message = { id: loadId, role: "assistant", content: "", timestamp: new Date(), isLoading: true };
 
-  const loadId = genId();
+    setMessages((p) => [...p, userMsg, loadMsg]);
+    setLoading(true);
+    setActiveSources([]);
+    setHighlightedSrc(null);
 
-  const loadMsg: Message = {
-    id: loadId,
-    role: "assistant",
-    content: "",
-    timestamp: new Date(),
-    isLoading: true,
-  };
+    const hId = genId();
+    setHistory((p) => [{ id: hId, query: q, timestamp: new Date(), messageCount: 1 }, ...p]);
+    setActiveId(hId);
 
-  setMessages((p) => [...p, userMsg, loadMsg]);
-  setLoading(true);
-  setActiveSources([]);
-  setHighlightedSrc(null);
+    try {
+      await simulate();
 
-  const hId = genId();
-  setHistory((p) => [
-    { id: hId, query: q, timestamp: new Date(), messageCount: 1 },
-    ...p,
-  ]);
-  setActiveId(hId);
+      const data = await handleSearch(q);
+      await new Promise((r) => setTimeout(r, 300));
 
-  try {
-    await simulate();
+      const sources: Source[] = Array.isArray(data.sources) ? data.sources : [];
 
-    const data = await handleSearch(q);
-    await new Promise((r) => setTimeout(r, 300));
+      const reply: Message = {
+        id: genId(),
+        role: "assistant",
+        content: data.answer,
+        sources,
+        timestamp: new Date(),
+      };
 
-    const reply: Message = {
-      id: genId(),
-      role: "assistant",
-      content: data.answer,
-      sources: data.sources,
-      timestamp: new Date(),
-    };
+      setMessages((p) => p.map((m) => (m.id === loadId ? reply : m)));
 
-    setMessages((p) =>
-      p.map((m) => (m.id === loadId ? reply : m))
-    );
+      // ✅ FIX: always update the inspector with the latest sources
+      setActiveSources(sources);
+      setHighlightedSrc(null);
+      setInspectorOpen(true);
 
-    setActiveSources(data.sources ?? []);
-
-    setHistory((p) =>
-      p.map((h) =>
-        h.id === hId ? { ...h, messageCount: 2 } : h
-      )
-    );
-
-    setStatus("done");
-  } catch (err: any) {
-    const errMsg: Message = {
-      id: genId(),
-      role: "error",
-      content: err?.message || "Backend error",
-      timestamp: new Date(),
-    };
-
-    setMessages((p) =>
-      p.map((m) => (m.id === loadId ? errMsg : m))
-    );
-
-    setStatus("error");
-  } finally {
-    setLoading(false);
-  }
-}, [input, loading, simulate]);
-      
-      
- 
+      setHistory((p) => p.map((h) => h.id === hId ? { ...h, messageCount: 2 } : h));
+      setStatus("done");
+    } catch (err: unknown) {
+      const errMsg: Message = {
+        id: genId(),
+        role: "error",
+        content: err instanceof Error ? err.message : "Backend error",
+        timestamp: new Date(),
+      };
+      setMessages((p) => p.map((m) => (m.id === loadId ? errMsg : m)));
+      setStatus("error");
+    } finally {
+      setLoading(false);
+    }
+  }, [input, loading, simulate]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
@@ -466,17 +465,23 @@ export default function App() {
     e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
   };
 
+  // ✅ FIX: when a citation is clicked, sync that message's sources into the
+  //         inspector and open it — previously only highlightedSrc was set
+  const handleSrcClick = useCallback((index: number, sources: Source[]) => {
+    setActiveSources(sources);
+    setHighlightedSrc(index);
+    setInspectorOpen(true);
+  }, []);
+
   const isActive = status !== "idle" && status !== "done" && status !== "error";
   const filteredHistory = history.filter((h) => h.query.toLowerCase().includes(search.toLowerCase()));
 
   const SUGGESTIONS = [
-    { icon: <TrendingUp className="w-3 h-3" />, label: "NVIDIA Revenue", q: "Analyze NVIDIA's revenue breakdown for FY2024", color: "text-emerald-400" },
-    { icon: <BarChart2 className="w-3 h-3" />, label: "NVIDIA Balance Sheet", q: "Show NVIDIA's balance sheet summary for FY2023", color: "text-sky-400" },
-    { icon: <AlertTriangle className="w-3 h-3" />, label: "NVIDIA Risk", q: "Primary risk factors in NVIDIA's FY2024 10-K?", color: "text-rose-400" },
-    { icon: <Zap className="w-3 h-3" />, label: "NVIDIA Cash Flow", q: "NVIDIA flow statement for FY2023", color: "text-yellow-400" },
+    { icon: <TrendingUp className="w-3 h-3" />, label: "NVIDIA Revenue",      q: "Analyze NVIDIA's revenue breakdown for FY2024",    color: "text-emerald-400" },
+    { icon: <BarChart2 className="w-3 h-3" />,  label: "NVIDIA Balance Sheet", q: "Show NVIDIA's balance sheet summary for FY2023",   color: "text-sky-400" },
+    { icon: <AlertTriangle className="w-3 h-3" />, label: "NVIDIA Risk",       q: "Primary risk factors in NVIDIA's FY2024 10-K?",   color: "text-rose-400" },
+    { icon: <Zap className="w-3 h-3" />,        label: "NVIDIA Cash Flow",     q: "NVIDIA cash flow statement for FY2023",           color: "text-yellow-400" },
   ];
-
-  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-slate-200 overflow-hidden" style={{ fontFamily: "'Inter', sans-serif" }}>
@@ -487,11 +492,17 @@ export default function App() {
           <div className="w-5 h-5 rounded bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
             <Database className="w-2.5 h-2.5 text-emerald-400" />
           </div>
-          <span className="text-[11px] font-mono font-bold text-slate-100 tracking-wider">LEDGERLENS</span>
+          <span className="text-[11px] font-mono font-bold text-slate-100 tracking-wider">FP&A 10K</span>
           <span className="text-[10px] font-mono text-slate-500">v2.1</span>
         </div>
         <div className="flex items-center h-full flex-1 overflow-hidden divide-x divide-slate-700/60">
-          {[["INDEX", "RAG", "text-emerald-400"], ["MODEL", "llama-3.3-70b-versatile", "text-sky-400"], ["CORPUS", "10K-NVDA", "text-slate-300"], ["VDB", "PINECONE", "text-violet-400"], ["EMBED", "BAAI/bge-small-en-v1.5", "text-slate-300"]].map(([label, val, col]) => (
+          {[
+            ["INDEX", "RAG", "text-emerald-400"],
+            ["MODEL", "llama-3.3-70b-versatile", "text-sky-400"],
+            ["CORPUS", "10K-NVDA", "text-slate-300"],
+            ["VDB", "PINECONE", "text-violet-400"],
+            ["EMBED", "BAAI/bge-small-en-v1.5", "text-slate-300"],
+          ].map(([label, val, col]) => (
             <div key={label} className="flex items-center gap-2 px-4 h-full">
               <span className="text-[10px] font-mono text-slate-500 tracking-widest uppercase">{label}</span>
               <span className={`text-[11px] font-mono font-semibold ${col}`}>{val}</span>
@@ -591,7 +602,6 @@ export default function App() {
         {/* ── MAIN CHAT ── */}
         <main className="flex-1 flex flex-col overflow-hidden">
           {messages.length === 0 ? (
-            // Welcome screen
             <div className="flex-1 flex flex-col items-center justify-center px-8 py-12 text-center">
               <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-6">
                 <Database className="w-7 h-7 text-emerald-400" />
@@ -619,20 +629,22 @@ export default function App() {
               </div>
               <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900 border border-slate-700/50">
                 <Zap className="w-3 h-3 text-yellow-400" />
-                <span className="text-[10px] font-mono text-slate-500">Backend: <span className="text-slate-400">{BACKEND_URL}/query</span></span>
-                <span className="text-[10px] font-mono text-emerald-600">· Demo active</span>
+                <span className="text-[10px] font-mono text-slate-500">Backend: <span className="text-slate-400">localhost:8000/api/query</span></span>
               </div>
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
               {messages.map((m) => (
-                <MsgBubble key={m.id} msg={m} onSrcClick={(i) => { setHighlightedSrc(i); }} />
+                <MsgBubble
+                  key={m.id}
+                  msg={m}
+                  onSrcClick={handleSrcClick}
+                />
               ))}
               <div ref={endRef} />
             </div>
           )}
 
-          {/* Analysis progress bar */}
           <AnalysisBar status={status} />
 
           {/* Composer */}
@@ -659,7 +671,7 @@ export default function App() {
             </div>
             <div className="flex items-center justify-between mt-2">
               <span className="text-[10px] font-mono text-slate-700">↵ Submit · Shift+↵ Newline</span>
-              <span className="text-[10px] font-mono text-slate-700">POST {BACKEND_URL}/query</span>
+              <span className="text-[10px] font-mono text-slate-700">POST localhost:8000/api/query</span>
             </div>
           </div>
         </main>
@@ -702,7 +714,9 @@ export default function App() {
                 <div className="flex divide-x divide-slate-700/60 border-b border-slate-700/60 shrink-0">
                   {[
                     ["CHUNKS", String(activeSources.length), "text-slate-300"],
-                    ["AVG SCORE", activeSources.some((s) => s.relevance_score !== undefined) ? `${Math.round(activeSources.reduce((a, s) => a + (s.relevance_score ?? 0), 0) / activeSources.length * 100)}%` : "—", "text-emerald-400"],
+                    ["AVG SCORE", activeSources.some((s) => s.relevance_score !== undefined)
+                      ? `${Math.round(activeSources.reduce((a, s) => a + (s.relevance_score ?? 0), 0) / activeSources.length * 100)}%`
+                      : "—", "text-emerald-400"],
                     ["DOCS", String(new Set(activeSources.map((s) => s.document)).size), "text-slate-300"],
                   ].map(([label, val, col]) => (
                     <div key={label} className="flex-1 px-3 py-2 text-center">
@@ -719,7 +733,7 @@ export default function App() {
               </>
             )}
             <div className="px-3 py-2 border-t border-slate-700/60 shrink-0">
-              <p className="text-[10px] font-mono text-slate-700 text-center">Vector DB · PGVector · Cosine Similarity</p>
+              <p className="text-[10px] font-mono text-slate-700 text-center">Vector DB · Pinecone · Cosine Similarity</p>
             </div>
           </aside>
         ) : (

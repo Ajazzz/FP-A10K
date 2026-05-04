@@ -37,35 +37,40 @@ interface QueryResponse {
 // ─── API ─────────────────────────────────────────────────────
 
 async function handleSearch(question: string): Promise<QueryResponse> {
-  const response = await fetch(
-    `${BACKEND_URL}/api/query`, // ✅ works both local + prod
-    {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/query`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ query: question }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || "Backend error");
     }
-  );
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Backend error: ${text}`);
+    const data = await response.json();
+
+    return {
+      answer: data.answer || "No response generated.",
+      sources: (data.sources || []).map((s: any) => ({
+        document: s.document || "10K-NVDA",
+        page_number: s.page_number || 1,
+        snippet: s.snippet || s.text || "",
+        relevance_score: s.relevance_score || s.score || 1,
+      })),
+    };
+  } catch (err) {
+    console.error("API ERROR:", err);
+
+    return {
+      answer: "⚠️ Backend not reachable. Please try again.",
+      sources: [],
+    };
   }
-
-  const data = await response.json();
-
-  return {
-    answer: data.answer || "No response generated.",
-    sources: (data.sources || []).map((s: any) => ({
-      document: s.document || "10K-NVDA",
-      page_number: s.page_number || 1,
-      snippet: s.snippet || s.text || JSON.stringify(s),
-      relevance_score: s.relevance_score || s.score || 1,
-    })),
-  };
 }
-
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

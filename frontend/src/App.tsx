@@ -56,14 +56,20 @@ const BACKEND_URL =
 // ─── API ─────────────────────────────────────────────────────
 
 async function handleSearch(question: string): Promise<QueryResponse> {
-  const response = await fetch(`${BACKEND_URL}/api/query`,  {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query: question }),
-  });
+
+  const response = await fetch(
+    `${BACKEND_URL}${BACKEND_URL ? "/api/query" : "/query"}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: question }),
+    }
+  );
 
   if (!response.ok) {
+
     const text = await response.text();
+
     throw new Error(text);
   }
 
@@ -71,10 +77,11 @@ async function handleSearch(question: string): Promise<QueryResponse> {
 
   return {
     answer: data?.answer || "No answer returned",
-    sources: Array.isArray(data?.sources) ? data.sources : [],
+    sources: Array.isArray(data?.sources)
+      ? data.sources
+      : [],
   };
 }
-
 // ─── Helpers ─────────────────────────────────────────────────
 
 function genId() {

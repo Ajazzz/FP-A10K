@@ -1,9 +1,11 @@
 import os
 import re
-import fitz  # PyMuPDF
+import fitz
+import cohere
+import time
+
 from dotenv import load_dotenv
 from pinecone import Pinecone, ServerlessSpec
-from sentence_transformers import SentenceTransformer
 
 # ─────────────────────────────────────────────
 # LOAD ENV
@@ -13,13 +15,9 @@ ENV_PATH = os.path.join(BASE_DIR, "..", ".env")
 
 load_dotenv(ENV_PATH)
 
-print("ENV PATH:", ENV_PATH)
-
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 INDEX_NAME = os.getenv("INDEX_NAME")
-
-print("ENV CHECK:", PINECONE_API_KEY)
-print("INDEX NAME:", INDEX_NAME)
+COHERE_API_KEY = os.getenv("COHERE_API_KEY")
 
 if not PINECONE_API_KEY:
     raise ValueError("PINECONE_API_KEY missing")
@@ -27,137 +25,261 @@ if not PINECONE_API_KEY:
 if not INDEX_NAME:
     raise ValueError("INDEX_NAME missing")
 
-# ─────────────────────────────────────────────
-# INIT MODEL (CPU SAFE)
-# ─────────────────────────────────────────────
-model = SentenceTransformer(
-    "BAAI/bge-small-en-v1.5",
-    device="cpu"
-)
+if not COHERE_API_KEY:
+    raise ValueError("COHERE_API_KEY missing")
 
 # ─────────────────────────────────────────────
-# PINECONE SETUP
+# INIT CLIENTS
 # ─────────────────────────────────────────────
+co = cohere.Client(COHERE_API_KEY)
+
 pc = Pinecone(api_key=PINECONE_API_KEY)
 
+# ─────────────────────────────────────────────
+# CREATE / CONNECT INDEX
+# ─────────────────────────────────────────────
 existing_indexes = [i.name for i in pc.list_indexes()]
 
 if INDEX_NAME not in existing_indexes:
+
     print(f"Creating index: {INDEX_NAME}")
+
     pc.create_index(
         name=INDEX_NAME,
-        dimension=384,
+        dimension=1024,
         metric="cosine",
-        spec=ServerlessSpec(cloud="aws", region="us-east-1")
+        spec=ServerlessSpec(
+            cloud="aws",
+            region="us-east-1"
+        )
     )
+
 else:
     print(f"Using existing index: {INDEX_NAME}")
 
 index = pc.Index(INDEX_NAME)
 
 # ─────────────────────────────────────────────
-# PDF → TEXT (SAFE EXTRACTION)
+# PDF EXTRACTION
 # ─────────────────────────────────────────────
-def extract_text_from_pdf(pdf_path):
+def extract_pages(pdf_path):
+
     doc = fitz.open(pdf_path)
 
-    full_text = ""
+    pages = []
 
     for page_num, page in enumerate(doc):
+
         text = page.get_text()
 
         if text.strip():
-            full_text += f"\n\n# Page {page_num + 1}\n"
-            full_text += text
 
-    return full_text
+            pages.append({
+                "page": page_num + 1,
+                "text": text
+            })
+
+    return pages
 
 # ─────────────────────────────────────────────
-# CONTEXT-AWARE + RECURSIVE CHUNKING
+# FINANCIAL SECTION SPLITTING
 # ─────────────────────────────────────────────
-def split_by_sections(text):
-    pattern = r"(Item\s+\d+[A-Z]?\.)"
-    parts = re.split(pattern, text)
+SECTION_PATTERN = r"(ITEM\s+\d+[A-Z]?\.?)"
+
+def split_financial_sections(text):
+
+    parts = re.split(
+        SECTION_PATTERN,
+        text,
+        flags=re.IGNORECASE
+    )
 
     sections = []
-    current = ""
+
+    current_title = "GENERAL"
+
+    current_text = ""
 
     for part in parts:
-        if part.startswith("# Page"):
-            if current:
-                sections.append(current.strip())
-            current = part
-        else:
-            current += "\n" + part
 
-    if current:
-        sections.append(current.strip())
+        part = part.strip()
+
+        if not part:
+            continue
+
+        if re.match(SECTION_PATTERN, part, re.IGNORECASE):
+
+            if current_text:
+
+                sections.append({
+                    "section": current_title,
+                    "text": current_text.strip()
+                })
+
+            current_title = part
+            current_text = ""
+
+        else:
+            current_text += "\n" + part
+
+    if current_text:
+
+        sections.append({
+            "section": current_title,
+            "text": current_text.strip()
+        })
 
     return sections
 
+# ─────────────────────────────────────────────
+# RECURSIVE CHUNKING
+# ─────────────────────────────────────────────
+def recursive_chunk(
+    text,
+    chunk_size=350,
+    overlap=60
+):
 
-def recursive_chunk(text, chunk_size=300, overlap=50):
     words = text.split()
 
     chunks = []
+
     start = 0
 
     while start < len(words):
+
         end = start + chunk_size
+
         chunk = " ".join(words[start:end])
+
         chunks.append(chunk)
+
         start += (chunk_size - overlap)
 
     return chunks
 
-
-def create_chunks(text):
-    sections = split_by_sections(text)
+# ─────────────────────────────────────────────
+# CONTEXT-AWARE CHUNKING
+# ─────────────────────────────────────────────
+def create_chunks(pages):
 
     final_chunks = []
 
-    for sec in sections:
-        if len(sec.split()) < 300:
-            final_chunks.append(sec)
-        else:
-            final_chunks.extend(recursive_chunk(sec))
+    for page_data in pages:
+
+        page_num = page_data["page"]
+
+        text = page_data["text"]
+
+        sections = split_financial_sections(text)
+
+        for sec in sections:
+
+            section_name = sec["section"]
+
+            section_text = sec["text"]
+
+            if len(section_text.split()) <= 350:
+
+                final_chunks.append({
+                    "page": page_num,
+                    "section": section_name,
+                    "text": section_text
+                })
+
+            else:
+
+                sub_chunks = recursive_chunk(section_text)
+
+                for sub in sub_chunks:
+
+                    final_chunks.append({
+                        "page": page_num,
+                        "section": section_name,
+                        "text": sub
+                    })
 
     return final_chunks
 
 # ─────────────────────────────────────────────
-# INDEXING (BATCH SAFE)
+# COHERE EMBEDDINGS
+# ─────────────────────────────────────────────
+
+def embed_batch(texts):
+
+    retries = 5
+
+    for attempt in range(retries):
+
+        try:
+
+            response = co.embed(
+                texts=texts,
+                model="embed-english-v3.0",
+                input_type="search_document",
+                embedding_types=["float"]
+            )
+
+            return response.embeddings.float
+
+        except Exception as e:
+
+            print(f"Embedding error: {e}")
+
+            wait_time = (attempt + 1) * 10
+
+            print(f"Retrying in {wait_time} sec...")
+
+            time.sleep(wait_time)
+
+    raise Exception("Failed after retries")
+
+# ─────────────────────────────────────────────
+# INDEXING
 # ─────────────────────────────────────────────
 def index_pdf(pdf_path):
-    print("Extracting text...")
-    text = extract_text_from_pdf(pdf_path)
 
-    print("Creating chunks...")
-    chunks = create_chunks(text)
+    print("Extracting PDF...")
+
+    pages = extract_pages(pdf_path)
+
+    print("Creating semantic chunks...")
+
+    chunks = create_chunks(pages)
 
     print(f"Total chunks: {len(chunks)}")
 
-    batch_size = 20
+    batch_size = 4
 
     for i in range(0, len(chunks), batch_size):
+
         batch = chunks[i:i + batch_size]
+
+        texts = [b["text"] for b in batch]
+
+        embeddings = embed_batch(texts)
 
         vectors = []
 
-        for j, chunk in enumerate(batch):
-            embedding = model.encode(chunk).tolist()
+        for j, embedding in enumerate(embeddings):
+
+            chunk_data = batch[j]
 
             vectors.append({
                 "id": f"chunk-{i+j}",
                 "values": embedding,
                 "metadata": {
-                    "text": chunk,
-                    "source": "10K-NVDA"
+                    "text": chunk_data["text"],
+                    "source": "10K-NVDA.pdf",
+                    "page": chunk_data["page"],
+                    "section": chunk_data["section"]
                 }
             })
 
         index.upsert(vectors=vectors)
 
         print(f"Uploaded batch {i // batch_size + 1}")
+        time.sleep(12)
 
     print("Indexing complete.")
 
@@ -165,7 +287,12 @@ def index_pdf(pdf_path):
 # RUN
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
-    pdf_path = os.path.join(os.path.dirname(__file__), "data", "10K-NVDA.pdf")
+
+    pdf_path = os.path.join(
+        os.path.dirname(__file__),
+        "data",
+        "10K-NVDA.pdf"
+    )
 
     if not os.path.exists(pdf_path):
         raise FileNotFoundError(f"PDF not found: {pdf_path}")

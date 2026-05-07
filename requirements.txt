@@ -1,8 +1,10 @@
 fastapi
-uvicorn
+uvicorn[standard]
 python-dotenv
 pinecone
-sentence-transformers
 groq
 pymupdf
 rank-bm25
+numpy
+cohere
+requests

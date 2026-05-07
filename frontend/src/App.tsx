@@ -45,10 +45,18 @@ interface HistoryItem {
 
 type AnalysisStatus = "idle" | "connecting" | "retrieving" | "analyzing" | "synthesizing" | "done" | "error";
 
+const BACKEND_URL =
+  import.meta.env.VITE_API_URL ||
+  (window.location.hostname === "localhost"
+    ? "http://localhost:8000"
+    : "");
+
+
+
 // ─── API ─────────────────────────────────────────────────────
 
 async function handleSearch(question: string): Promise<QueryResponse> {
-  const response = await fetch("/api/query", {
+  const response = await fetch(`${BACKEND_URL}/api/query`,  {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query: question }),
@@ -190,7 +198,7 @@ function MsgBubble({ msg, onSrcClick }: { msg: Message; onSrcClick?: (i: number,
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-mono text-emerald-500 font-semibold tracking-widest">LEDGERLENS AI</span>
+            <span className="text-[10px] font-mono text-emerald-500 font-semibold tracking-widest">FP&A 10K AI</span>
             {!msg.isLoading && (
               <span className="text-[10px] font-mono text-slate-600">
                 {msg.timestamp.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}
@@ -501,7 +509,7 @@ export default function App() {
             ["MODEL", "llama-3.3-70b-versatile", "text-sky-400"],
             ["CORPUS", "10K-NVDA", "text-slate-300"],
             ["VDB", "PINECONE", "text-violet-400"],
-            ["EMBED", "BAAI/bge-small-en-v1.5", "text-slate-300"],
+            ["EMBED", "embed-english-v3.0", "text-slate-300"],
           ].map(([label, val, col]) => (
             <div key={label} className="flex items-center gap-2 px-4 h-full">
               <span className="text-[10px] font-mono text-slate-500 tracking-widest uppercase">{label}</span>
@@ -606,7 +614,7 @@ export default function App() {
               <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-6">
                 <Database className="w-7 h-7 text-emerald-400" />
               </div>
-              <h1 className="text-xl font-bold text-slate-100 tracking-tight mb-1">LedgerLens Intelligence</h1>
+              <h1 className="text-xl font-bold text-slate-100 tracking-tight mb-1">FP&A 10K RAG</h1>
               <p className="text-[10px] font-mono text-slate-600 tracking-widest uppercase mb-4">Enterprise 10-K Analysis · RAG · Semantic Search</p>
               <p className="text-sm text-slate-500 max-w-sm leading-relaxed mb-10">
                 Ask any question about SEC 10-K filings. Get structured financial analysis with cited PDF sources, markdown tables, and risk scores.

@@ -45,26 +45,22 @@ interface HistoryItem {
 
 type AnalysisStatus = "idle" | "connecting" | "retrieving" | "analyzing" | "synthesizing" | "done" | "error";
 
-const BACKEND_URL =
-  import.meta.env.VITE_API_URL ||
-  (window.location.hostname === "localhost"
-    ? "http://localhost:8000"
-    : "");
-
-
-
-// ─── API ─────────────────────────────────────────────────────
+const API_URL =
+  window.location.hostname === "localhost"
+    ? "http://localhost:8000/api/query"
+    : "/api/query";
 
 async function handleSearch(question: string): Promise<QueryResponse> {
 
-  const response = await fetch(
-    `${BACKEND_URL}${BACKEND_URL ? "/api/query" : "/query"}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: question }),
-    }
-  );
+  const response = await fetch(API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query: question,
+    }),
+  });
 
   if (!response.ok) {
 

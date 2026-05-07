@@ -2,11 +2,12 @@
 
 set -o errexit
 
-echo "Cleaning old static build..."
+echo "Removing old static build..."
 rm -rf backend/static
 
 echo "Installing frontend dependencies..."
 cd frontend
+
 npm install
 
 echo "Building frontend..."
@@ -14,7 +15,7 @@ npm run build
 
 cd ..
 
-echo "Verifying build..."
+echo "Checking generated files..."
 ls backend/static
 ls backend/static/assets
 
